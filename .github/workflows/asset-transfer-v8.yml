@@ -1,0 +1,20 @@
+name: Poly Haven hydrant metadata
+on:
+  pull_request:
+    paths: [asset-transfer-trigger-v8.txt]
+permissions:
+  contents: read
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download hydrant API metadata
+        run: |
+          set -e
+          mkdir -p transfer
+          curl -fL 'https://api.polyhaven.com/files/fire_hydrant' -o transfer/fire_hydrant-files.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fire-hydrant-metadata-v8
+          path: transfer
+          retention-days: 1
