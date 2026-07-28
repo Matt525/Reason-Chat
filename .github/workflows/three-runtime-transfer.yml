@@ -1,0 +1,22 @@
+name: Three runtime transfer
+on:
+  pull_request:
+    paths: [three-runtime-trigger.txt]
+permissions:
+  contents: read
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download exact Three.js package
+        run: |
+          set -e
+          mkdir -p transfer
+          curl -fL 'https://registry.npmjs.org/three/-/three-0.185.1.tgz' -o transfer/three-0.185.1.tgz
+          sha256sum transfer/three-0.185.1.tgz > transfer/SHA256SUMS.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: three-runtime-0.185.1
+          path: transfer
+          compression-level: 0
+          retention-days: 1
