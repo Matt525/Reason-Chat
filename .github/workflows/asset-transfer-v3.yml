@@ -1,0 +1,65 @@
+name: CC0 PBR and prop transfer
+on:
+  pull_request:
+    paths: [asset-transfer-trigger-v3.txt]
+permissions:
+  contents: read
+jobs:
+  transfer:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download public CC0 PBR maps and prop GLBs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p transfer/models transfer/textures transfer/licenses
+          curl -fL 'https://raw.githubusercontent.com/KenneyNL/Starter-Kit-City-Builder/4535092b740b378b700efd9df9e27a631815b84a/models/road-straight-lightposts.glb' -o transfer/models/road-straight-lightposts.glb
+          curl -fL 'https://raw.githubusercontent.com/KenneyNL/Starter-Kit-City-Builder/4535092b740b378b700efd9df9e27a631815b84a/models/Textures/colormap.png' -o transfer/models/colormap.png
+          curl -fL 'https://raw.githubusercontent.com/kidscancode/3d_car_sphere/e467b25d7979fcc12b590ba23e96bf1e4a2824e6/assets/kenney_car_kit/sedan.glb' -o transfer/models/sedan.glb
+          curl -fL 'https://raw.githubusercontent.com/RetroDECK/RetroQUEST/dfa19a5602a31f64bd890d15279a61f43b127328/assets/kenney_furniture-kit/Models/GLTF%20format/bench.glb' -o transfer/models/bench.glb
+          python - <<'PY'
+          import json, pathlib, urllib.request, urllib.parse, zipfile, shutil
+          root=pathlib.Path('transfer')
+          def fetch(url):
+              req=urllib.request.Request(url,headers={'User-Agent':'MidnightDistrict/3.0'})
+              with urllib.request.urlopen(req,timeout=180) as r:return r.read()
+          def save(url,path):
+              p=pathlib.Path(path);p.parent.mkdir(parents=True,exist_ok=True);p.write_bytes(fetch(url));return p
+          sets={
+            'asphalt':('worn_asphalt',['diff','nor_gl','rough','ao','disp']),
+            'pavement':('concrete_tiles_02',['diff','nor_gl','rough','ao','disp']),
+            'brick':('worn_brick_wall',['diff','nor_gl','rough','ao','disp']),
+            'concrete':('concrete_layers_02',['diff','nor_gl','rough','ao','disp']),
+            'rusty_metal':('rusty_metal_02',['diff','nor_gl','rough','ao','metal'])}
+          names={'diff':'diffuse','nor_gl':'normal','rough':'roughness','ao':'ao','disp':'displacement','metal':'metalness'}
+          for local,(asset,maps) in sets.items():
+              for suffix in maps:
+                  url=f'https://dl.polyhaven.org/file/ph-assets/Textures/jpg/2k/{asset}/{asset}_{suffix}_2k.jpg'
+                  save(url,root/f'textures/{local}/{names[suffix]}.jpg')
+          def flatten(v):
+              if isinstance(v,str):return [v] if v.startswith('http') else []
+              if isinstance(v,list):return sum((flatten(x) for x in v),[])
+              if isinstance(v,dict):return sum((flatten(x) for x in v.values()),[])
+              return []
+          for asset in ['fire_hydrant','metal_trash_can','trashbag','covered_car']:
+              meta=json.loads(fetch(f'https://api.polyhaven.com/files/{asset}'))
+              urls=[u for u in flatten(meta) if ('gltf' in u.lower() or u.lower().endswith('.glb')) and ('1k' in u.lower())]
+              urls=sorted(urls,key=lambda u:(not u.lower().endswith('.zip'),not u.lower().endswith('.glb'),len(u)))
+              if not urls:raise RuntimeError(f'No 1K glTF for {asset}')
+              url=urls[0];pkg=save(url,root/f'models/packages/{pathlib.Path(urllib.parse.urlparse(url).path).name}')
+              out=root/f'models/polyhaven/{asset}';out.mkdir(parents=True,exist_ok=True)
+              if zipfile.is_zipfile(pkg):
+                  with zipfile.ZipFile(pkg) as z:z.extractall(out)
+              else:shutil.copy2(pkg,out/pkg.name)
+              if not list(out.rglob('*.glb')) and not list(out.rglob('*.gltf')):raise RuntimeError(f'No glTF extracted for {asset}')
+          PY
+          printf '%s\n' 'Poly Haven assets: CC0, attribution not required.' 'Kenney assets: CC0, attribution not required.' 'Sketchfab assets used: none.' > transfer/licenses/LICENSE_AUDIT.txt
+          find transfer -type f -printf '%s %p\n' | sort -n > transfer/FILE_SIZES.txt
+          sha256sum $(find transfer -type f ! -name SHA256SUMS.txt) > transfer/SHA256SUMS.txt
+          cat transfer/FILE_SIZES.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: midnight-district-pbr-props-v3
+          path: transfer
+          compression-level: 0
+          retention-days: 1
